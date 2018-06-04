@@ -1,6 +1,6 @@
 FROM ubuntu:16.04 AS base
 
-ADD https://github.com/PowerShell/PowerShell-Snap/blob/master/assets/thirdPartyNoticeHeader.txt tpnHeader.txt
+ADD https://raw.githubusercontent.com/PowerShell/PowerShell-Snap/master/assets/thirdPartyNoticeHeader.txt tpnHeader.txt
 
 ENV thirdPartyNoticeFile="thirdPartyNotices.txt"
 RUN cat tpnHeader.txt > $thirdPartyNoticeFile; rm tpnHeader.txt ; \
