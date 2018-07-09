@@ -78,6 +78,8 @@ parts:
       - libunwind8
       - libuuid1
       - zlib1g
+      - ncurses-base
+      - ncurses-bin
     build-packages:
       - curl
       - jq
