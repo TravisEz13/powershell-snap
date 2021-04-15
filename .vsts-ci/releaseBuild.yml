@@ -1,0 +1,27 @@
+resources:
+- repo: self
+  clean: true
+
+variables:
+  POWERSHELL_TELEMETRY_OPTOUT: 1
+
+stages:
+- template: ./templates/releaseBuildAndPushStage.yml
+  parameters:
+    channel: stable
+
+- template: ./templates/releaseBuildAndPushStage.yml
+  parameters:
+    channel: preview
+
+- template: ./templates/releaseBuildAndPushStage.yml
+  parameters:
+    channel: lts
+
+- stage: virus_scan
+  dependsOn:
+    - build_and_push_stable
+    - build_and_push_preview
+    - build_and_push_lts
+  jobs:
+  - template: ./templates/virusScanPhase.yml

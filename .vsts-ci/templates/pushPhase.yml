@@ -1,0 +1,103 @@
+parameters:
+  vmImage: 'ubuntu-18.04'
+  parentJobs: []
+  matrix:
+
+jobs:
+- job: push
+  strategy:
+    matrix:
+      ${{ parameters.matrix }}
+  pool:
+    vmImage: ${{ parameters.vmImage }}
+
+  variables:
+    ReleaseTag: edge/default
+
+  dependsOn:
+    ${{ parameters.parentJobs }}
+
+  steps:
+  - task: DownloadBuildArtifacts@0
+    displayName: 'Download Build Artifacts'
+    inputs:
+      downloadType: specific
+      itemPattern: '$(channel)/**/*.snap'
+
+  - powershell: |
+      $snaps = Get-ChildItem $(System.ArtifactsDirectory)/*.snap -recurse -File
+      if($snaps.Count -gt 1)
+      {
+        $snaps | out-string -width 100 | Write-Verbose -verbose
+        Write-Error "***More than one snap found***" -errorAction stop
+      }
+    displayName: Verify that only one snap was downloaded
+
+  - powershell: |
+      [string]$Branch=$env:BUILD_SOURCEBRANCH
+      $branchOnly = $Branch -replace '^refs/heads/';
+      $branchOnly = $branchOnly -replace '[_\-]'
+
+      if($branchOnly -eq 'master' -or $branchOnly -like '*dailytest*')
+      {
+          Write-verbose "release branch:" -verbose
+          $generatedBranch = (get-date).ToString('yyyyMMddHH')
+          $releaseTag = "edge/$generatedBranch"
+          $vstsCommandString = "vso[task.setvariable variable=ReleaseTag]$releaseTag"
+          Write-Verbose -Message "setting ReleaseTag to $releaseTag" -Verbose
+          Write-Host -Object "##$vstsCommandString"
+      }
+      else
+      {
+          Write-verbose "non-release branch" -verbose
+          # Branch is named <previewname>
+          $releaseTag = "edge/$branchOnly"
+          $vstsCommandString = "vso[task.setvariable variable=ReleaseTag]$releaseTag"
+          Write-Verbose -Message "setting ReleaseTag to $releaseTag" -Verbose
+          Write-Host -Object "##$vstsCommandString"
+      }
+    displayName: Set ReleaseTag Variable
+
+  - powershell: |
+        sudo chown root:root /
+    displayName: 'Make sure root owns root'
+    condition: succeeded()
+
+  - powershell: |
+        $channel = (Get-Content ./snapcraftConfig.json | ConvertFrom-Json).channel
+        Write-Verbose -Verbose -Message "using Channel $channel"
+        sudo snap install snapcraft --classic "--channel=$channel"
+    condition: succeeded()
+    displayName: 'Install snapcraft'
+
+  - powershell: |
+      $loginFile='./snapstore.login'
+
+      '$(SNAPLOGIN)' | base64 --decode --ignore-garbage > $loginFile
+      snapcraft login --with $loginFile
+      rm $loginFile
+    displayName: 'snapcraft login'
+
+  - powershell: |
+      $track = 'latest'
+      if('$(channel)' -eq 'lts')
+      {
+        $track = 'lts'
+      }
+
+      $snaps = Get-ChildItem $(System.ArtifactsDirectory)/*.snap -recurse -File | Select-Object -ExpandProperty FullName
+
+      foreach($snap in $snaps)
+      {
+        snapcraft push --release "$track/$(ReleaseTag)" $snap
+      }
+    displayName: 'snapcraft push'
+
+  - powershell: |
+      snapcraft logout
+    displayName: 'snapcraft logout'
+    condition: always()
+
+  - task: ms.vss-governance-buildtask.governance-build-task-component-detection.ComponentGovernanceComponentDetection@0
+    displayName: 'Component Detection'
+
